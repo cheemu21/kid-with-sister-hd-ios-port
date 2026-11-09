@@ -51,8 +51,10 @@ the app's folder in the Files app (On My iPhone > Wind Waker HD) or in Finder in
   Skip button shows, and a tap elsewhere is A. While a game controller is connected, only ≡ and ✎
   stay (`WWHD_TOUCH_ALWAYS=1` keeps all of them).
 - **≡ menu**: the GamePad screen (inset, full screen or hidden), the layout editor, button size,
-  opacity, camera speed, camera stick, combat buttons (auto, always or never), the Metal HUD (Apple's
-  performance overlay: frame rate, frame time, GPU time, memory; iOS 16+, real devices only) and vibration. The game
+  opacity, camera speed, camera stick, combat buttons (auto, always or never), the performance
+  overlay (frame rate, frame time and the longest frame, GPU time, memory, thermal state; works
+  everywhere, LiveContainer too), Apple's Metal HUD (iOS shows it only with Developer Mode on, after
+  reopening the app) and vibration. The game
   pauses while it's open. ≡ and ✎ fade out after 5 seconds; the first touch on them brings them back.
 - **✎ layout editor**: drag a control to move it (it snaps to the grid). Drag the corner handle or
   pinch to resize it. 🗑 removes the selected control, + puts removed ones back, ↺ restores the

@@ -32,5 +32,9 @@ void set_drc_mode(int m);
 // Apple's Metal performance HUD (frame rate, GPU time, memory) over the game picture; remembered
 bool metal_hud();
 void set_metal_hud(bool on);
+// the built-in performance overlay (ios_perf.mm): frame rate, frame time, GPU time, memory; remembered
+bool perf_overlay();
+void set_perf_overlay(bool on);
+void install_perf_overlay(UIView* parent, UIView* below);  // ios_app.mm's layout; `below`: the touch controls
 
 }  // namespace ios

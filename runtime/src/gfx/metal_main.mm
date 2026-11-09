@@ -234,12 +234,37 @@ id<MTLCommandBuffer> command_buffer() {
 
 uint32_t g_draws_since_commit = 0;
 std::atomic<uint64_t> g_gpu_ns{0};  // GPU busy time, for the periodic report
+static std::atomic<uint64_t> g_gpu_total_ns{0};  // the same, never reset (perf_sample)
 
 static void track_gpu_time(id<MTLCommandBuffer> cb) {
     [cb addCompletedHandler:^(id<MTLCommandBuffer> b) {
         double t = b.GPUEndTime - b.GPUStartTime;
-        if (t > 0) g_gpu_ns += (uint64_t)(t * 1e9);
+        if (t > 0) {
+            g_gpu_ns += (uint64_t)(t * 1e9);
+            g_gpu_total_ns += (uint64_t)(t * 1e9);
+        }
     }];
+}
+
+// the performance overlay (ios_perf.mm): presented frames, GPU time, the longest gap between two
+// presents since the last sample
+static std::atomic<uint64_t> g_present_count{0}, g_max_gap_ns{0};
+static void note_present() {
+    static uint64_t last = 0;
+    uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    if (last) {
+        uint64_t gap = now - last, m = g_max_gap_ns.load(std::memory_order_relaxed);
+        while (gap > m && !g_max_gap_ns.compare_exchange_weak(m, gap)) {}
+    }
+    last = now;
+    g_present_count++;
+}
+PerfSample perf_sample() {
+    PerfSample p;
+    p.frames = g_present_count.load();
+    p.gpu_ns = g_gpu_total_ns.load();
+    p.max_gap_ms = g_max_gap_ns.exchange(0) / 1e6f;
+    return p;
 }
 
 void end_encoder() {
@@ -627,6 +652,7 @@ void swap() {
         pendingCapture.clear();
     }
     if (const char* dir = capture_begin_frame()) pendingCapture = dir;
+    note_present();
     @autoreleasepool {
         present(R.tv);
         present(R.drc);

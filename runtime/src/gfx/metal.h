@@ -114,4 +114,11 @@ void resample(id<MTLTexture> src, id<MTLTexture> dst, const FormatInfo& fmt, uin
               uint32_t dstW = 0, uint32_t dstH = 0);
 void forget_texture_views();  // metal_draw.mm: textures were replaced
 
+// the performance overlay (iOS): swaps presented so far, GPU busy time so far, and the longest time
+// between two swaps since the previous call
+struct PerfSample {
+    uint64_t frames = 0, gpu_ns = 0;
+    float max_gap_ms = 0;
+};
+PerfSample perf_sample();
 }  // namespace gfx

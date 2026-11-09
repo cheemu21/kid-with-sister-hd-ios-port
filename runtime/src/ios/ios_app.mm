@@ -186,6 +186,7 @@ void load_env_file(const std::string& path) {
     if (g_drc_screen) g_drc_screen->visible = m != 2;
     ios::set_touch_controls_drc_rect(self.controls, m == 2 ? CGRectZero : drc, m == 1);
     [self.view bringSubviewToFront:self.controls];
+    ios::install_perf_overlay(self.view, self.controls);
 }
 
 - (void)viewDidLayoutSubviews {
@@ -327,6 +328,9 @@ int main(int argc, char** argv) {
         setvbuf(stderr, nullptr, _IOLBF, 0);
 
         std::string bundle = NSBundle.mainBundle.resourcePath.UTF8String;
+        // Apple's Metal HUD, also through its environment switch (read when the Metal device is
+        // created; the layer property alone isn't honoured everywhere)
+        if ([NSUserDefaults.standardUserDefaults boolForKey:@"metalHud"]) setenv("MTL_HUD_ENABLED", "1", 1);
         load_env_file(bundle + "/env.txt");
         load_env_file(d + "/env.txt");
 

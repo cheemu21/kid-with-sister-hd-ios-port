@@ -853,9 +853,27 @@ static NSInteger nearest(const std::vector<float>& v, float x) {
             [self loadPrefs];
         }];
     });
-    add([NSString stringWithFormat:@"Metal HUD: %@", ios::metal_hud() ? @"On" : @"Off"], ^{
-        ios::set_metal_hud(!ios::metal_hud());
+    add([NSString stringWithFormat:@"Performance overlay: %@", ios::perf_overlay() ? @"On" : @"Off"], ^{
+        ios::set_perf_overlay(!ios::perf_overlay());
         [self showMenu];
+    });
+    add([NSString stringWithFormat:@"Apple Metal HUD: %@", ios::metal_hud() ? @"On" : @"Off"], ^{
+        bool on = !ios::metal_hud();
+        ios::set_metal_hud(on);
+        if (on) {
+            UIAlertController* n = [UIAlertController
+                alertControllerWithTitle:@"Apple Metal HUD"
+                                 message:@"iOS shows it only with Developer Mode on (Settings > Privacy & Security), "
+                                         @"and it may need the app to be closed and opened again. The Performance overlay "
+                                         @"works everywhere."
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [n addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction*) {
+                [self showMenu];
+            }]];
+            [ios::root_view_controller() presentViewController:n animated:YES completion:nil];
+        } else {
+            [self showMenu];
+        }
     });
     add([NSString stringWithFormat:@"Vibration: %@", _haptics ? @"On" : @"Off"], ^{
         [prefs() setBool:!self->_haptics forKey:@"touch.haptics"];
