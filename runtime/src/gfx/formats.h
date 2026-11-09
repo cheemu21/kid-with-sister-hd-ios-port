@@ -24,6 +24,10 @@ struct FormatInfo {
     uint32_t bytesPerBlock = 0;  // guest (source) bytes per texel or per 4x4 block
     uint32_t hostBytesPerBlock = 0;
     bool compressed = false;     // 4x4 blocks
+    // BC1-5 the GPU can't sample (iOS devices without BC texture support): pixel is RGBA8 / R8 / RG8 and
+    // the blocks are decoded on the CPU at upload (bc_decode); 0 = none, else the BC number
+    uint8_t bcDecode = 0;
+    bool bcSigned = false;
     bool depth = false;
     bool stencil = false;
     Convert convert = Convert::NONE;
@@ -32,6 +36,11 @@ struct FormatInfo {
 
 // isDepth: the surface is used as a depth buffer (selects depth pixel formats)
 FormatInfo format_info(uint32_t gx2Format, bool isDepth);
+
+// bcDecode != 0: decode bw x bh blocks per slice into texels (rows of bw * 4 texels); bytes per texel
+// are bc_texel_bytes
+uint32_t bc_texel_bytes(uint8_t bc);
+void bc_decode(uint8_t bc, bool isSigned, const uint8_t* src, uint32_t bw, uint32_t bh, uint32_t slices, uint8_t* dst);
 
 // convert one row of `count` texels (or blocks) from guest layout to host layout
 void convert_row(Convert c, const uint8_t* src, uint8_t* dst, uint32_t count);

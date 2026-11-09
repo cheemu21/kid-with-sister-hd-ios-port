@@ -4,7 +4,12 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/stat.h>
+#ifdef __APPLE__
+#include <pthread.h>
+#include <sys/ucontext.h>
+#else
 #include <ucontext.h>
+#endif
 #include <unistd.h>
 
 #include <algorithm>
@@ -30,7 +35,9 @@ const char* gpu_name();
 #include "runtime.h"
 #include "crash_info.h"
 #include "release.h"
+#ifndef __APPLE__
 #include <sys/prctl.h>
+#endif
 #ifdef WWHD_DEVICE_RECOMP
 #include "recomp/loader.h"
 #endif
@@ -105,7 +112,11 @@ void crash_log_details() {
     {
         // the thread, how long the game ran, and where in the game it was
         char tname[17] = {};
+#ifdef __APPLE__
+        pthread_getname_np(pthread_self(), tname, sizeof tname);
+#else
         prctl(PR_GET_NAME, tname);
+#endif
         timespec now{};
         clock_gettime(CLOCK_MONOTONIC, &now);
         long secs = (long)(now.tv_sec - g_boot_time.tv_sec);
@@ -151,7 +162,9 @@ static void crash_handler(int sig, siginfo_t* si, void* uctx) {
     }
     // the faulting instruction and the module holding it (a GPU driver, a Vulkan layer, the game code)
     uintptr_t pc = 0;
-#if defined(__aarch64__)
+#if defined(__APPLE__) && defined(__aarch64__)
+    if (uctx) pc = (uintptr_t)((ucontext_t*)uctx)->uc_mcontext->__ss.__pc;
+#elif defined(__aarch64__)
     if (uctx) pc = (uintptr_t)((ucontext_t*)uctx)->uc_mcontext.pc;
 #elif defined(__x86_64__) && defined(__linux__)
     if (uctx) pc = (uintptr_t)((ucontext_t*)uctx)->uc_mcontext.gregs[REG_RIP];
@@ -314,7 +327,7 @@ void start_game_thread() {
     }).detach();
 }
 
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(WWHD_IOS)
 int main(int argc, char** argv) {
     bool warm_shaders = false;
     for (int i = 1; i < argc; i++) {

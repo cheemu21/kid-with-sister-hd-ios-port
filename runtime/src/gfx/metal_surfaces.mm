@@ -542,16 +542,26 @@ void upload_surface(Surface* s) {
         uint32_t w, h, slices;
         decode_level(s, level, base, data, w, h, slices);
         uint32_t bw = f.compressed ? (w + 3) / 4 : w, bh = f.compressed ? (h + 3) / 4 : h;
+        uint32_t rowBytes = bw * f.hostBytesPerBlock, perSlice = bw * bh * f.hostBytesPerBlock;
+        MTLSize size = MTLSizeMake(f.compressed ? bw * 4 : w, f.compressed ? bh * 4 : h, 1);
+        if (f.bcDecode) {  // BC blocks the GPU can't sample: texels decoded here (formats.mm)
+            std::vector<uint8_t> px((size_t)bw * 4 * bh * 4 * slices * bc_texel_bytes(f.bcDecode));
+            bc_decode(f.bcDecode, f.bcSigned, data.data(), bw, bh, slices, px.data());
+            data.swap(px);
+            rowBytes = bw * 4 * bc_texel_bytes(f.bcDecode);
+            perSlice = rowBytes * bh * 4;
+            size = MTLSizeMake(w, h, 1);  // plain texels: exactly the level's size
+        }
         staging = [R.device newBufferWithBytes:data.data() length:data.size() options:MTLResourceStorageModeShared];
         bool is3D = s->tex.textureType == MTLTextureType3D;
         uint32_t layers = is3D ? 1 : (s->tex.textureType == MTLTextureTypeCube ? 6 : (uint32_t)s->tex.arrayLength);
-        uint32_t perSlice = bw * bh * f.hostBytesPerBlock;
+        if (is3D) size.depth = slices;
         for (uint32_t z = 0; z < (is3D ? 1 : std::min(slices, layers)); z++) {
             [blit copyFromBuffer:staging
                      sourceOffset:(NSUInteger)z * perSlice
-                sourceBytesPerRow:bw * f.hostBytesPerBlock
+                sourceBytesPerRow:rowBytes
               sourceBytesPerImage:perSlice
-                       sourceSize:MTLSizeMake(f.compressed ? bw * 4 : w, f.compressed ? bh * 4 : h, is3D ? slices : 1)
+                       sourceSize:size
                         toTexture:s->tex
                  destinationSlice:z
                  destinationLevel:level

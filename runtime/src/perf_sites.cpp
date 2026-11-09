@@ -159,7 +159,12 @@ extern "C" void hook_0275EBC0(Cpu* c) {
         c->r[3] = yaz0_cached(dst, src);
         if (logMs > 0) {
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-            if (ms > logMs) LOG("[yaz0] %u bytes in %.1f ms (%.0f MB/s) on cpu %d", size, ms, size / 1e3 / ms, sched_getcpu());
+            if (ms > logMs) LOG("[yaz0] %u bytes in %.1f ms (%.0f MB/s) on cpu %d", size, ms, size / 1e3 / ms,
+#ifdef __APPLE__
+                                 -1);
+#else
+                                 sched_getcpu());
+#endif
         }
         return;
     }

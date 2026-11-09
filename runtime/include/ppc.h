@@ -14,7 +14,17 @@
 extern "C" {
 #endif
 
-#if defined(__ANDROID__)
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+/* iOS: wherever the system has 4 GiB free, chosen once at start (mem::init, before any game code
+ * runs). 64 GiB, the Android address, needs the extended-virtual-addressing entitlement, which
+ * host apps such as LiveContainer don't have. Declared const so the compiler keeps it in a register
+ * across stores; defined writable in runtime/src/ios/mem_base.cpp. */
+extern uint8_t* const ppc_mem_base;
+#define PPC_MEM_BASE ppc_mem_base
+#elif defined(__ANDROID__)
 #define PPC_MEM_BASE ((uint8_t*)0x1000000000ull)
 #else
 #define PPC_MEM_BASE ((uint8_t*)0x200000000000ull)

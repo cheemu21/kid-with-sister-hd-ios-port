@@ -1,7 +1,12 @@
 // Controls mapping model, JSON persistence and evaluation (see input_map.h).
 #include "input_map.h"
 
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#include "ios/kvk_codes.h"  // the same kVK_* values without Carbon
+#else
 #include <Carbon/Carbon.h>  // kVK_* key codes
+#endif
 #include <sys/stat.h>
 
 #include <algorithm>

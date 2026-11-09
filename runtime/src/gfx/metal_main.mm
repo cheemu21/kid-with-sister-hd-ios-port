@@ -1,5 +1,10 @@
 // Metal renderer: device, window, presentation, clears and copies.
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#else
 #import <AppKit/AppKit.h>
+#endif
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -22,6 +27,22 @@ const char* backend_name() { return "Metal"; }
 
 // ---------------------------------------------------------------- windows
 }  // namespace gfx
+#if TARGET_OS_IPHONE
+// iOS: the views and their layers belong to the UIKit shell (runtime/src/ios/ios_app.mm)
+namespace gfx {
+void ios_create_layers(Screen& tv, Screen& drc);  // ios_app.mm; any thread
+void ios_run_main_loop();                         // ios_app.mm
+bool drc_window_available() { return true; }
+bool ios_drc_shown();
+void ios_show_drc(bool on);
+bool drc_window_shown() { return ios_drc_shown(); }
+void show_drc_window(bool on) { ios_show_drc(on); }
+static void create_window() {
+    ios_create_layers(R.tv, R.drc);
+    input::init();
+}
+}  // namespace gfx
+#else
 
 // GamePad screen: the mouse stands in for the touch panel
 @interface WWDrcView : NSView
@@ -119,6 +140,9 @@ static void create_window() {
     }
     input::init();
 }
+}  // namespace gfx
+#endif  // !TARGET_OS_IPHONE
+namespace gfx {
 
 // ---------------------------------------------------------------- presentation shader
 static const char* kPresentShader = R"(
@@ -271,6 +295,9 @@ void init() {
     R.queue = [R.device newCommandQueue];
     create_window();
     create_present_pipeline();
+    // iOS devices cap one buffer's size (the 1 GiB MEM2 window below must fit): logged for phone reports
+    LOG("[gfx] max buffer %llu MiB, BC textures %s", (unsigned long long)(R.device.maxBufferLength >> 20),
+        R.device.supportsBCTextureCompression ? "on the GPU" : "decoded on the CPU");
     // GPU-visible guest memory: MEM2 (code data + heaps), runtime objects, foreground bucket, MEM1
     map_guest_range(0x10000000, 0x40000000);
     map_guest_range(0x60000000, 0x10000000);
@@ -279,7 +306,11 @@ void init() {
     LOG("[gfx] Metal device: %s", R.device.name.UTF8String);
 }
 
+#if TARGET_OS_IPHONE
+void run_main_loop() { ios_run_main_loop(); }
+#else
 void run_main_loop() { [NSApp run]; }
+#endif
 
 // ---------------------------------------------------------------- clears
 static void clear_surface(Surface* s, const float* rgba, bool clearDepth, float depth, bool clearStencil, uint32_t stencil,

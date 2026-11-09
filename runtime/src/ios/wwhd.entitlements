@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- the guest's 4 GiB window sits at 64 GiB (runtime/include/ppc.h) -->
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key><true/>
+	<!-- the game, its textures and shaders need more than the default memory limit -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key><true/>
+</dict>
+</plist>

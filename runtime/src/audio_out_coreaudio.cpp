@@ -88,7 +88,11 @@ void init() {
 
     AudioComponentDescription desc{};
     desc.componentType = kAudioUnitType_Output;
+#if TARGET_OS_IPHONE
+    desc.componentSubType = kAudioUnitSubType_RemoteIO;  // the session is set up in ios_app.mm
+#else
     desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+#endif
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
     if (!comp || AudioComponentInstanceNew(comp, &g_unit) != noErr) {
@@ -109,8 +113,10 @@ void init() {
     AURenderCallbackStruct cb{render, nullptr};
     AudioUnitSetProperty(g_unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb);
     // debug: WWHD_AUDIO_VOLUME=0..1 scales the device volume (e.g. silent tests of the real output path)
+#if !TARGET_OS_IPHONE
     if (const char* v = getenv("WWHD_AUDIO_VOLUME"))
         AudioUnitSetParameter(g_unit, kHALOutputParam_Volume, kAudioUnitScope_Global, 0, (AudioUnitParameterValue)atof(v), 0);
+#endif
     if (AudioUnitInitialize(g_unit) != noErr || AudioOutputUnitStart(g_unit) != noErr) {
         LOG("[audio] failed to start output unit");
         return;

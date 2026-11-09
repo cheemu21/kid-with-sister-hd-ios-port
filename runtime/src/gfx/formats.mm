@@ -1,7 +1,22 @@
 // GX2 surface format mapping. Texel layouts follow Cemu's LatteTextureLoader decoders.
 #include "formats.h"
 
+#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+
 namespace gfx {
+
+// whether the GPU samples BC1-5 itself (every Mac; on iOS only some devices)
+static bool bc_native() {
+    static const bool native = [] {
+        if (const char* e = getenv("WWHD_BC_DECODE")) return atoi(e) == 0;  // 1: always decode on the CPU
+        id<MTLDevice> d = MTLCreateSystemDefaultDevice();
+        if (@available(iOS 16.4, macOS 11.0, *)) return (bool)d.supportsBCTextureCompression;
+        return false;
+    }();
+    return native;
+}
 
 static FormatInfo make(MTLPixelFormat p, uint32_t bpb, FormatInfo::Kind kind = FormatInfo::FLOAT, Convert cv = Convert::NONE,
                        uint32_t hostBpb = 0) {
@@ -74,6 +89,14 @@ FormatInfo format_info(uint32_t fmt, bool isDepth) {
     // depth formats sampled as color textures
     case 0x11: case 0x12: case 0x13: case 0x14: f = make(MTLPixelFormatR32Float, 4, FormatInfo::FLOAT, Convert::D24_R32F, 4); break;
     default: f = make(MTLPixelFormatRGBA8Unorm, 4); break;
+    }
+    if (f.compressed && !bc_native()) {
+        const uint8_t bc = (uint8_t)(hw - 0x30);  // 0x31..0x35: BC1..BC5
+        f.bcDecode = bc;
+        f.bcSigned = isSigned;
+        f.pixel = bc <= 3 ? (isSrgb ? MTLPixelFormatRGBA8Unorm_sRGB : MTLPixelFormatRGBA8Unorm)
+                : bc == 4 ? (isSigned ? MTLPixelFormatR8Snorm : MTLPixelFormatR8Unorm)
+                          : (isSigned ? MTLPixelFormatRG8Snorm : MTLPixelFormatRG8Unorm);
     }
     return f;
 }
@@ -150,4 +173,86 @@ void convert_row(Convert c, const uint8_t* src, uint8_t* dst, uint32_t n) {
     }
 }
 
+}  // namespace gfx
+
+// ---------------------------------------------------------------- BC1-5 on the CPU
+namespace gfx {
+uint32_t bc_texel_bytes(uint8_t bc) { return bc <= 3 ? 4 : bc == 4 ? 1 : 2; }
+
+namespace {
+void rgb565(uint16_t c, int* o) {
+    o[0] = ((c >> 11) & 31) * 255 / 31;
+    o[1] = ((c >> 5) & 63) * 255 / 63;
+    o[2] = (c & 31) * 255 / 31;
+}
+// colour block (8 bytes) into 16 RGBA texels; fourColor: BC2/BC3 never use the 3-colour mode
+void color_block(const uint8_t* b, bool fourColor, uint8_t out[16][4]) {
+    uint16_t c0 = b[0] | b[1] << 8, c1 = b[2] | b[3] << 8;
+    int p[4][4];
+    rgb565(c0, p[0]);
+    rgb565(c1, p[1]);
+    p[0][3] = p[1][3] = p[2][3] = p[3][3] = 255;
+    if (fourColor || c0 > c1) {
+        for (int i = 0; i < 3; i++) {
+            p[2][i] = (2 * p[0][i] + p[1][i]) / 3;
+            p[3][i] = (p[0][i] + 2 * p[1][i]) / 3;
+        }
+    } else {
+        for (int i = 0; i < 3; i++) { p[2][i] = (p[0][i] + p[1][i]) / 2; p[3][i] = 0; }
+        p[3][3] = 0;
+    }
+    uint32_t idx = b[4] | b[5] << 8 | b[6] << 16 | (uint32_t)b[7] << 24;
+    for (int t = 0; t < 16; t++) {
+        const int* c = p[(idx >> (2 * t)) & 3];
+        for (int i = 0; i < 4; i++) out[t][i] = (uint8_t)c[i];
+    }
+}
+// one channel (8 bytes, BC4 / BC3 alpha / BC5 halves) into 16 values
+void channel_block(const uint8_t* b, bool isSigned, uint8_t out[16]) {
+    int e0 = isSigned ? std::max<int>((int8_t)b[0], -127) : b[0];
+    int e1 = isSigned ? std::max<int>((int8_t)b[1], -127) : b[1];
+    int v[8] = {e0, e1};
+    if (e0 > e1) {
+        for (int i = 1; i < 7; i++) v[i + 1] = ((7 - i) * e0 + i * e1) / 7;
+    } else {
+        for (int i = 1; i < 5; i++) v[i + 1] = ((5 - i) * e0 + i * e1) / 5;
+        v[6] = isSigned ? -127 : 0;
+        v[7] = isSigned ? 127 : 255;
+    }
+    uint64_t idx = 0;
+    for (int i = 0; i < 6; i++) idx |= (uint64_t)b[2 + i] << (8 * i);
+    for (int t = 0; t < 16; t++) out[t] = (uint8_t)(int8_t)v[(idx >> (3 * t)) & 7];
+}
+}  // namespace
+
+void bc_decode(uint8_t bc, bool isSigned, const uint8_t* src, uint32_t bw, uint32_t bh, uint32_t slices, uint8_t* dst) {
+    const uint32_t bpt = bc_texel_bytes(bc), blockBytes = (bc == 1 || bc == 4) ? 8 : 16;
+    const size_t rowBytes = (size_t)bw * 4 * bpt, sliceBytes = rowBytes * bh * 4;
+    for (uint32_t z = 0; z < slices; z++)
+        for (uint32_t by = 0; by < bh; by++)
+            for (uint32_t bx = 0; bx < bw; bx++, src += blockBytes) {
+                uint8_t px[16][4];
+                uint8_t ch[2][16];
+                switch (bc) {
+                case 1: color_block(src, false, px); break;
+                case 2:
+                    color_block(src + 8, true, px);
+                    for (int t = 0; t < 16; t++) px[t][3] = (uint8_t)(((src[t / 2] >> (4 * (t & 1))) & 15) * 17);
+                    break;
+                case 3:
+                    color_block(src + 8, true, px);
+                    channel_block(src, false, ch[0]);
+                    for (int t = 0; t < 16; t++) px[t][3] = ch[0][t];
+                    break;
+                case 4: channel_block(src, isSigned, ch[0]); break;
+                default: channel_block(src, isSigned, ch[0]); channel_block(src + 8, isSigned, ch[1]); break;
+                }
+                for (int t = 0; t < 16; t++) {
+                    uint8_t* o = dst + z * sliceBytes + (by * 4 + t / 4) * rowBytes + (bx * 4 + t % 4) * bpt;
+                    if (bc <= 3) memcpy(o, px[t], 4);
+                    else if (bc == 4) o[0] = ch[0][t];
+                    else { o[0] = ch[0][t]; o[1] = ch[1][t]; }
+                }
+            }
+}
 }  // namespace gfx

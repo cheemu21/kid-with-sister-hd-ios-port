@@ -1,5 +1,9 @@
 // Guest memory, RPX loading, function dispatch, logging and HLE registry.
 #ifdef __APPLE__
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <TargetConditionals.h>
+#endif
 #include <mach-o/ldsyms.h>  // _mh_execute_header
 #endif
 #include <fcntl.h>
@@ -83,8 +87,43 @@ void fatal(const char* fmt, ...) {
 namespace mem {
 static std::atomic<uint32_t> g_runtime_top{kRuntimeStart};
 
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+void set_base(uint8_t* base);  // ios/mem_base.cpp
+
+// the 4 GiB window: at 64 GiB where the app may use that much address space (the
+// extended-virtual-addressing entitlement), else wherever the system has room, with 64 KiB to
+// spare on both sides for the guard ranges
+// true: the guard ranges are set up too
+static bool choose_base() {
+    constexpr uint64_t kWindow = 0x100000000ull, kGuard = 0x10000;
+    // WWHD_MEM_ANYWHERE=1: skip 64 GiB (tests the other path where 64 GiB would work)
+    if (!getenv("WWHD_MEM_ANYWHERE") && platform::map_fixed((void*)0x1000000000ull, kWindow)) {
+        set_base((uint8_t*)0x1000000000ull);
+        LOG("[mem] guest window at %p", PPC_MEM_BASE);
+        return false;
+    }
+    vm_address_t a = 0;
+    kern_return_t kr = vm_allocate(mach_task_self(), &a, kWindow + 2 * kGuard, VM_FLAGS_ANYWHERE);
+    if (kr != KERN_SUCCESS)
+        fatal("cannot reserve 4 GiB of address space for the game (error %d): the device or the host app "
+              "allows too little; installing the app directly with the extended-virtual-addressing "
+              "entitlement avoids this", kr);
+    // the 64 KiB on both sides are the guard ranges
+    mprotect((void*)a, kGuard, PROT_NONE);
+    mprotect((void*)(a + kGuard + kWindow), kGuard, PROT_NONE);
+    set_base((uint8_t*)(a + kGuard));
+    LOG("[mem] guest window at %p (64 GiB taken or not allowed)", PPC_MEM_BASE);
+    return true;
+}
+#endif
+
 void init() {
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+    bool guarded = choose_base();
+#else
+    constexpr bool guarded = false;
     if (!platform::map_fixed(PPC_MEM_BASE, 0x100000000ull)) fatal("cannot reserve guest address space at %p", PPC_MEM_BASE);
+#endif
     // null page guard: catches guest null-pointer accesses
     mprotect(PPC_MEM_BASE, 0x10000, PROT_NONE);
     // guard ranges around the window: the recompiled code's D-form accesses add their offset (+-32 KiB)
@@ -93,6 +132,7 @@ void init() {
 #define MAP_FIXED_NOREPLACE 0x100000
 #endif
     for (uint8_t* g : {PPC_MEM_BASE - 0x10000, PPC_MEM_BASE + 0x100000000ull}) {
+        if (guarded) break;
         void* p = mmap(g, 0x10000, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
         if (p != (void*)g) {
             if (p != MAP_FAILED) munmap(p, 0x10000);

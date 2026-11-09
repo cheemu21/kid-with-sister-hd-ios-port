@@ -50,6 +50,8 @@ Get the latest APK from the **[Releases page](../../releases/latest)**.
 - About 2 GB of free storage (the extracted game) and 2 GB of free RAM for the one-time setup
 - Your own copy of The Wind Waker HD for Wii U: USA, Europe or Japan
 
+**iPhone and iPad**: see [docs/ios.md](docs/ios.md). You build the app on a Mac from your own game.
+
 ---
 
 ## What's new in Plus

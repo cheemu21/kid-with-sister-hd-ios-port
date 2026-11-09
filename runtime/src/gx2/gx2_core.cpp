@@ -200,7 +200,9 @@ static Recording g_recs[kMaxRecorders];
 alignas(64) static std::atomic<int> g_recording{0};  // slots in use
 static std::atomic<int> g_rec_slots{0};  // slots ever claimed (the scan's end)
 static inline uintptr_t self_id() {
-#if defined(__aarch64__) || defined(__x86_64__)
+    // not on Apple: there TPIDR_EL0 (arm64) holds the CPU number, shared by the threads on a core and
+    // changed when a thread moves, so display lists of different threads got mixed up
+#if (defined(__aarch64__) || defined(__x86_64__)) && !defined(__APPLE__)
     return (uintptr_t)__builtin_thread_pointer();
 #else
     return (uintptr_t)pthread_self();

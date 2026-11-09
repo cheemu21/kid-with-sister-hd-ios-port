@@ -270,7 +270,8 @@ static std::string snap_texcoords(const char* src) {
 
 static void compile_msl(Shader* sh, const char* rawSrc, uint64_t key) {
     MTLCompileOptions* opt = [MTLCompileOptions new];
-    opt.mathMode = MTLMathModeSafe;
+    if (@available(macOS 15.0, iOS 18.0, *)) opt.mathMode = MTLMathModeSafe;
+    else opt.fastMathEnabled = NO;
     opt.languageVersion = MTLLanguageVersion3_0;
     std::string snapped = snap_texcoords(rawSrc);
     const char* src = snapped.c_str();

@@ -21,7 +21,10 @@
 #ifdef __APPLE__
 #include <execinfo.h>
 #include <mach/mach.h>
+#include <TargetConditionals.h>
+#if !TARGET_OS_IPHONE
 #include <mach/mach_vm.h>
+#endif
 #include <pthread/qos.h>
 #else
 #include <sys/resource.h>
@@ -445,8 +448,13 @@ uint64_t thread_cpu_us(pthread_t t) {
 
 bool map_fixed(void* addr, size_t size) {
 #ifdef __APPLE__
+#if TARGET_OS_IPHONE
+    vm_address_t a = (vm_address_t)addr;
+    return vm_allocate(mach_task_self(), &a, size, VM_FLAGS_FIXED) == KERN_SUCCESS;
+#else
     mach_vm_address_t a = (mach_vm_address_t)addr;
     return mach_vm_allocate(mach_task_self(), &a, size, VM_FLAGS_FIXED) == KERN_SUCCESS;
+#endif
 #else
     // MAP_FIXED_NOREPLACE fails instead of clobbering an existing mapping; kernels older than 4.17
     // treat it as a hint, so the result is checked as well. NORESERVE: only touched pages count.

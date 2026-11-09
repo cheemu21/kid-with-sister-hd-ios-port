@@ -45,7 +45,11 @@ struct State {
 // CLOCK_MONOTONIC_COARSE: a few ns per read (no counter read), enough for the 500 ms staleness check
 int64_t coarse_ms() {
     timespec ts;
+#ifdef __APPLE__
+    clock_gettime(CLOCK_MONOTONIC_RAW_APPROX, &ts);
+#else
     clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+#endif
     return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 State g;
