@@ -106,8 +106,9 @@ switches.
 The Android app's touch controls, with its artwork:
 
 - **Moving**: the left side of the screen is a floating stick that starts where your thumb lands.
-- **Camera**: swipe on the right side, double tap to centre it behind Link, and pinch to zoom.
-  There is also a fixed camera stick.
+- **Camera**: swipe on the right side. The camera follows your finger 1:1, with no acceleration or
+  drift (≡ > Camera: Stick switches back to the Android app's stick-like swipes). Double tap to
+  centre it behind Link, and pinch to zoom. There is also a fixed camera stick.
 - **Context buttons**: A, B, ZR and the X / Y / R item slots show what they do in the game. The
   D-pad items (Wind Waker, cannon, salvage hook) appear once Link has them.
 - **Combat buttons**: the orange buttons are one-touch moves (jump attack, vertical slash, spin
@@ -146,7 +147,7 @@ The game pauses while the menu is open. Every setting is remembered.
 | GamePad screen | Inset, full screen or hidden |
 | Edit layout | The ✎ layout editor |
 | Button size, Opacity | The touch controls' size and opacity |
-| Camera speed, Camera stick | How fast swipes turn the camera; the fixed camera stick on or off |
+| Camera speed, Camera, Camera stick | How fast swipes turn the camera; swipes 1:1 or as a stick; the fixed camera stick on or off |
 | Combat buttons | Auto (once Link has a sword), always or never |
 | Performance overlay | Frame rate, frame time and the longest frame, GPU time, memory and the phone's thermal state, at the top left |
 | Apple Metal HUD | Apple's own overlay. iOS shows it only with Developer Mode on (Settings > Privacy & Security), and after the app is reopened |

@@ -3,7 +3,9 @@
 // WWHD.app/touch/*.webp).
 //
 // - a floating left stick (where the thumb lands on the left side), the camera on swipes over the
-//   right side (double tap: centre it, pinch: zoom), and an optional fixed camera stick
+//   right side (double tap: centre it, pinch: zoom), and an optional fixed camera stick. Swipes turn
+//   the camera 1:1 through the mouse camera (mods/camera.cpp: degrees per point, no ramp or
+//   smoothing); ≡ > Camera: Stick turns them into a right stick as on Android
 // - context buttons whose icons follow the game (A, B, ZR, the items on X/Y/R: touch_hud.cpp), lock-on,
 //   first person, the D-pad items Link has, pause, and one-touch combat moves (macros of the GamePad
 //   combinations); during skippable scenes only a Skip button, and a tap elsewhere is A
@@ -28,6 +30,11 @@ namespace {
 std::mutex g_mu;
 ios::TouchPad g_pad;
 std::atomic<bool> g_live{false};  // the game's memory is there: the HUD state can be read
+// swipe camera (1:1): a finger is turning the camera, or lifted less than this long ago (its last
+// movement is still to be taken by the game: mods::mouse_captured)
+std::atomic<bool> g_camFinger{false};
+std::atomic<double> g_camUntil{0};
+constexpr float kSwipeDegPerPoint = 0.35f;  // camera degrees per point of finger movement (x Camera speed)
 
 enum Kind { K_STICK, K_BUTTON, K_MACRO, K_MENU, K_EDIT, K_CAMSTICK, K_SKIP };
 enum Move { M_JUMP = 1, M_VERTICAL, M_SPIN, M_DODGE };
@@ -106,6 +113,7 @@ int pref_i(NSString* k, int def) { id v = [prefs() objectForKey:k]; return v ? [
     bool _controlsVisible;
     float _scale, _opacity, _camSens;
     bool _haptics, _cameraStick;
+    bool _swipeCamera;  // camera swipes turn the camera 1:1 (the mouse camera), else as a right stick
     int _combatMode;  // 0 auto (with a sword), 1 always, 2 never
     CGFloat _unit, _baseUnit;
 
@@ -213,6 +221,9 @@ int pref_i(NSString* k, int def) { id v = [prefs() objectForKey:k]; return v ? [
     _combatMode = pref_i(@"touch.combat", 0);
     _cameraStick = pref_b(@"touch.cameraStick", true);
     if (!_cameraStick) _camStickTouch = nil;
+    _swipeCamera = pref_i(@"touch.cameraMode", 0) == 0;
+    mods::set_mouse_camera(_swipeCamera);
+    mods::set_mouse_sensitivity(kSwipeDegPerPoint * _camSens);
     [self layoutControls];
     [self setNeedsDisplay];
 }
@@ -394,7 +405,8 @@ static void draw_text(NSString* s, CGFloat cx, CGFloat cy, CGFloat size, UIColor
 - (void)cameraDown:(UITouch*)t at:(CGPoint)p {
     _camTouch = t;
     _camLast = _camDown = p;
-    [self startCamTimer];
+    if (_swipeCamera) g_camFinger = true;
+    else [self startCamTimer];
     double now = CACurrentMediaTime();
     if (now - _lastCamTap < 0.3) {  // second tap: centre the camera
         _lastCamTap = 0;
@@ -425,8 +437,15 @@ static void draw_text(NSString* s, CGFloat cx, CGFloat cy, CGFloat size, UIColor
 }
 - (void)cameraUp:(CGPoint)p {
     _camTouch = nil;
+    [self cameraFingerLifted];
     bool tap = std::hypot(p.x - _camDown.x, p.y - _camDown.y) < _baseUnit * 0.3;
     _lastCamTap = tap ? CACurrentMediaTime() : 0;
+}
+
+- (void)cameraFingerLifted {
+    if (!g_camFinger) return;
+    g_camFinger = false;
+    g_camUntil = CACurrentMediaTime() + 0.25;
 }
 
 // ---------------------------------------------------------------- combat moves
@@ -573,6 +592,7 @@ static void draw_text(NSString* s, CGFloat cx, CGFloat cy, CGFloat size, UIColor
     for (auto& c : _ctls) c.pressed = false;
     [_pointers removeAllObjects];
     _stickTouch = _camTouch = _pinchTouch = _camStickTouch = nil;
+    g_camFinger = false;
     _stickX = _stickY = _camX = _camY = _camStickX = _camStickY = 0;
     _macroGen++;
     _macro.clear();
@@ -705,8 +725,12 @@ static void draw_text(NSString* s, CGFloat cx, CGFloat cy, CGFloat size, UIColor
             [self pinchMoved];
         } else if (t == _camTouch) {
             if (!_pinchTouch) {  // turning; a pinch holds the camera still
-                _camAccX += p.x - _camLast.x;
-                _camAccY += p.y - _camLast.y;
+                if (_swipeCamera) {
+                    mods::mouse_add((float)(p.x - _camLast.x), (float)(p.y - _camLast.y));
+                } else {
+                    _camAccX += p.x - _camLast.x;
+                    _camAccY += p.y - _camLast.y;
+                }
             }
             _camLast = p;
             if (_pinchTouch) [self pinchMoved];
@@ -840,6 +864,11 @@ static NSInteger nearest(const std::vector<float>& v, float x) {
             [prefs() setFloat:speeds[i] forKey:@"touch.cameraSensitivity"];
             [self loadPrefs];
         }];
+    });
+    add([NSString stringWithFormat:@"Camera: %@", _swipeCamera ? @"Swipe (1:1)" : @"Stick (Android)"], ^{
+        [prefs() setInteger:self->_swipeCamera ? 1 : 0 forKey:@"touch.cameraMode"];
+        [self loadPrefs];
+        [self showMenu];
     });
     add([NSString stringWithFormat:@"Camera stick: %@", _cameraStick ? @"On" : @"Off"], ^{
         [prefs() setBool:!self->_cameraStick forKey:@"touch.cameraStick"];
@@ -1202,4 +1231,5 @@ void set_touch_controls_hidden(bool hidden) {  // main thread
     if (g_view) [g_view setControlsVisible:!hidden];
 }
 void set_game_live() { g_live = true; }
+bool touch_camera_active() { return g_camFinger.load() || CACurrentMediaTime() < g_camUntil.load(); }
 }  // namespace ios
